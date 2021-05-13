@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
+use Fcntl qw(:seek);
 use File::Find;
 use File::Basename;
 
@@ -134,8 +135,9 @@ sub sort_warnings {
 my @warn_noall = @warnings;
 pop @warn_noall if ($warn_noall[$#warn_noall]->{name} eq 'all');
 
-open(my $out, '>', $outfile)
-    or die "$0: cannot open output file $outfile: $!\n";
+my $outdata;
+open(my $out, '>', \$outdata)
+    or die "$0: cannot create memory file: $!\n";
 
 if ($what eq 'c') {
     print $out "#include \"error.h\"\n\n";
@@ -273,4 +275,24 @@ if ($what eq 'c') {
 	print $out "\\b \\i\\c{", $pfx, "} ", @doc, "\n";
     }
 }
+
+close($out);
+
+# Write data to file if and only if it has changed
+# For some systems, even if we don't write, opening for append
+# apparently touches the timestamp, so we need to read and write
+# as separate operations.
+if (open(my $out, '<', $outfile)) {
+    my $datalen = length($outdata);
+    my $oldlen = read($out, my $oldoutdata, $datalen+1);
+    close($out);
+    exit 0 if (defined($oldlen) && $oldlen == $datalen &&
+	       ($oldoutdata eq $outdata));
+}
+
+# Data changed, must rewrite
+open(my $out, '>', $outfile)
+    or die "$0: cannot open output file $outfile: $!\n";
+
+print $out $outdata;
 close($out);

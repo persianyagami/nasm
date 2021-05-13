@@ -67,6 +67,13 @@ struct compile_time {
 };
 extern struct compile_time official_compile_time;
 
+/* POSIX timestamp if and only if we are not a reproducible build */
+extern bool reproducible;
+static inline int64_t posix_timestamp(void)
+{
+    return reproducible ? 0 : official_compile_time.posix;
+}
+
 #define NO_SEG  INT32_C(-1)     /* null segment value */
 #define SEG_ABS 0x40000000L     /* mask for far-absolute segments */
 
@@ -177,8 +184,8 @@ enum token_type { /* token types, other than chars */
     TOKEN_MULT       = '*',
     TOKEN_DIV        = '/',
     TOKEN_MOD        = '%',
-    TOKEN_LPAR       = ')',
-    TOKEN_RPAR       = '(',
+    TOKEN_LPAR       = '(',
+    TOKEN_RPAR       = ')',
     TOKEN_PLUS       = '+',
     TOKEN_MINUS      = '-',
     TOKEN_COMMA      = ',',
@@ -250,6 +257,8 @@ enum token_type { /* token types, other than chars */
     TOKEN_NAKED_STR,       /* Unquoted string that can be re-quoted */
     TOKEN_PREPROC_Q,       /* %? */
     TOKEN_PREPROC_QQ,      /* %?? */
+    TOKEN_PREPROC_SQ,      /* %*? */
+    TOKEN_PREPROC_SQQ,     /* %*?? */
     TOKEN_PASTE,           /* %+ */
     TOKEN_COND_COMMA,      /* %, */
     TOKEN_INDIRECT,        /* %[...] */
@@ -610,20 +619,23 @@ enum prefixes { /* instruction prefixes */
     P_XRELEASE,
     P_BND,
     P_NOBND,
+    P_REX,
     P_EVEX,
+    P_VEX,
     P_VEX3,
     P_VEX2,
     PREFIX_ENUM_LIMIT
 };
 
 enum ea_flags { /* special EA flags */
-    EAF_BYTEOFFS    =  1,   /* force offset part to byte size */
-    EAF_WORDOFFS    =  2,   /* force offset part to [d]word size */
-    EAF_TIMESTWO    =  4,   /* really do EAX*2 not EAX+EAX */
-    EAF_REL         =  8,   /* IP-relative addressing */
-    EAF_ABS         = 16,   /* non-IP-relative addressing */
-    EAF_FSGS        = 32,   /* fs/gs segment override present */
-    EAF_MIB         = 64    /* mib operand */
+    EAF_BYTEOFFS    =   1,  /* force offset part to byte size */
+    EAF_WORDOFFS    =   2,  /* force offset part to [d]word size */
+    EAF_TIMESTWO    =   4,  /* really do EAX*2 not EAX+EAX */
+    EAF_REL         =   8,  /* IP-relative addressing */
+    EAF_ABS         =  16,  /* non-IP-relative addressing */
+    EAF_FSGS        =  32,  /* fs/gs segment override present */
+    EAF_MIB         =  64,  /* mib operand */
+    EAF_SIB         = 128   /* SIB encoding obligatory */
 };
 
 enum eval_hint { /* values for `hinttype' */
@@ -705,14 +717,15 @@ enum ea_type {
  * the introduction of HLE.
  */
 enum prefix_pos {
-    PPS_WAIT,   /* WAIT (technically not a prefix!) */
-    PPS_REP,    /* REP/HLE prefix */
-    PPS_LOCK,   /* LOCK prefix */
-    PPS_SEG,    /* Segment override prefix */
-    PPS_OSIZE,  /* Operand size prefix */
-    PPS_ASIZE,  /* Address size prefix */
-    PPS_VEX,    /* VEX type */
-    MAXPREFIX   /* Total number of prefix slots */
+    PPS_TIMES = -1,     /* TIMES (not a slot, handled separately) */
+    PPS_WAIT  =  0,   	/* WAIT (technically not a prefix!) */
+    PPS_REP,    	/* REP/HLE prefix */
+    PPS_LOCK,   	/* LOCK prefix */
+    PPS_SEG,    	/* Segment override prefix */
+    PPS_OSIZE,  	/* Operand size prefix */
+    PPS_ASIZE,  	/* Address size prefix */
+    PPS_REX,    	/* REX/VEX type */
+    MAXPREFIX   	/* Total number of prefix slots */
 };
 
 /*
@@ -1107,11 +1120,33 @@ struct dfmt {
                            int is_global, char *special);
 
     /*
-     * debug_macros - called once at the end with a definition for each
+     * debug_smacros - called when an smacro is defined or undefined
+     * during the code-generation pass. The definition string contains
+     * the macro name, any arguments, a single space, and the macro
+     * definition; this is what is expected by e.g. DWARF.
+     *
+     * The definition is provided even for an undef.
+     */
+    void (*debug_smacros)(bool define, const char *def);
+
+    /*
+     * debug_include - called when a file is included or the include
+     * is finished during the code-generation pass.  The filename is
+     * kept by the srcfile system and so can be compared for pointer
+     * equality.
+     *
+     * A filename of NULL means builtin (initial or %use) or command
+     * line statements.
+     */
+    void (*debug_include)(bool start, struct src_location outer,
+                          struct src_location inner);
+
+    /*
+     * debug_mmacros - called once at the end with a definition for each
      * non-.nolist macro that has been invoked at least once in the program,
      * and the corresponding address ranges. See dbginfo.h.
      */
-    void (*debug_macros)(const struct debug_macro_info *);
+    void (*debug_mmacros)(const struct debug_macro_info *);
 
     /*
      * debug_directive - called whenever a DEBUG directive other than 'LINE'

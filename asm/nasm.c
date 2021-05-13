@@ -941,7 +941,8 @@ enum text_options {
     OPT_LIMIT,
     OPT_KEEP_ALL,
     OPT_NO_LINE,
-    OPT_DEBUG
+    OPT_DEBUG,
+    OPT_REPRODUCIBLE
 };
 enum need_arg {
     ARG_NO,
@@ -973,6 +974,7 @@ static const struct textargs textopts[] = {
     {"keep-all", OPT_KEEP_ALL, ARG_NO, 0},
     {"no-line",  OPT_NO_LINE, ARG_NO, 0},
     {"debug",    OPT_DEBUG, ARG_MAYBE, 0},
+    {"reproducible", OPT_REPRODUCIBLE, ARG_NO, 0},
     {NULL, OPT_BOGUS, ARG_NO, 0}
 };
 
@@ -1333,6 +1335,9 @@ static bool process_arg(char *p, char *q, int pass)
                 case OPT_DEBUG:
                     debug_nasm = param ? strtoul(param, NULL, 10) : debug_nasm+1;
                     break;
+                case OPT_REPRODUCIBLE:
+                    reproducible = true;
+                    break;
                 case OPT_HELP:
                     help(stdout);
                     exit(0);
@@ -1685,9 +1690,8 @@ static void assemble_file(const char *fname, struct strlist *depend_list)
         cpu = cmd_cpu;
         if (listname) {
             if (pass_final() || list_on_every_pass()) {
-                active_list_options = list_options;
                 lfmt->init(listname);
-            } else if (active_list_options) {
+            } else if (list_active()) {
                 /*
                  * Looks like we used the list engine on a previous pass,
                  * but now it is turned off, presumably via %pragma -p
@@ -1695,7 +1699,6 @@ static void assemble_file(const char *fname, struct strlist *depend_list)
                 lfmt->cleanup();
                 if (!keep_all)
                     remove(listname);
-                active_list_options = 0;
             }
         }
 
@@ -2265,8 +2268,8 @@ static void help(FILE *out)
         "       -Lm        show multi-line macro calls with expanded parmeters\n"
         "       -Lp        output a list file every pass, in case of errors\n"
         "       -Ls        show all single-line macro definitions\n"
-        "       -Lw        flush the output after every line\n"
-        "       -L+        enable all listing options (very verbose!)\n"
+        "       -Lw        flush the output after every line (very slow!)\n"
+        "       -L+        enable all listing options except -Lw (very verbose!)\n"
         "\n"
         "    -Oflags...    optimize opcodes, immediates and branch offsets\n"
         "       -O0        no optimization\n"
@@ -2291,6 +2294,8 @@ static void help(FILE *out)
         "                  common and global symbols (also --gprefix)\n"
         "   --lprefix str  prepend the given string to local symbols\n"
         "   --lpostfix str append the given string to local symbols\n"
+        "\n"
+        "   --reproducible attempt to produce run-to-run identical output\n"
         "\n"
         "    -w+x          enable warning x (also -Wx)\n"
         "    -w-x          disable warning x (also -Wno-x)\n"

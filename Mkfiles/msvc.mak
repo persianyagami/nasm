@@ -61,10 +61,13 @@ X               = .exe
 
 #-- Begin File Lists --#
 # Edit in Makefile.in, not here!
-NASM =	asm\nasm.$(O)
+NASM    = asm\nasm.$(O)
 NDISASM = disasm\ndisasm.$(O)
 
-LIBOBJ = stdlib\snprintf.$(O) stdlib\vsnprintf.$(O) stdlib\strlcpy.$(O) \
+PROGOBJ = $(NASM) $(NDISASM)
+PROGS   = nasm$(X) ndisasm$(X)
+
+LIBOBJ_NW = stdlib\snprintf.$(O) stdlib\vsnprintf.$(O) stdlib\strlcpy.$(O) \
 	stdlib\strnlen.$(O) stdlib\strrchrnul.$(O) \
 	\
 	nasmlib\ver.$(O) \
@@ -86,7 +89,7 @@ LIBOBJ = stdlib\snprintf.$(O) stdlib\vsnprintf.$(O) stdlib\strlcpy.$(O) \
 	x86\regs.$(O) x86\regvals.$(O) x86\regflags.$(O) x86\regdis.$(O) \
 	x86\disp8.$(O) x86\iflag.$(O) \
 	\
-	asm\error.$(O) asm\warnings.$(O) \
+	asm\error.$(O) \
 	asm\floats.$(O) \
 	asm\directiv.$(O) asm\directbl.$(O) \
 	asm\pragma.$(O) \
@@ -109,6 +112,13 @@ LIBOBJ = stdlib\snprintf.$(O) stdlib\vsnprintf.$(O) stdlib\strlcpy.$(O) \
 	output\codeview.$(O) \
 	\
 	disasm\disasm.$(O) disasm\sync.$(O)
+
+# Warnings depend on all source files, so handle them separately
+WARNOBJ   = asm\warnings.$(O)
+
+LIBOBJ    = $(LIBOBJ_NW) $(WARNOBJ)
+ALLOBJ_NW = $(PROGOBJ) $(LIBOBJ_NW)
+ALLOBJ    = $(PROGOBJ) $(LIBOBJ)
 
 SUBDIRS  = stdlib nasmlib output asm disasm x86 common macros
 XSUBDIRS = test doc nsis rdoff
@@ -216,22 +226,41 @@ x86\regs.h: x86\regs.dat x86\regs.pl
 	$(RUNPERL) $(srcdir)\x86\regs.pl h \
 		$(srcdir)\x86\regs.dat > x86\regs.h
 
-# Extract warnings from source code. Since this depends on
-# ALL the source files, this is only done on demand.
+# Extract warnings from source code. This is done automatically if any
+# C files have changed; the script is fast enough that that is
+# reasonable, but doesn't update the time stamp if the files aren't
+# changed, to avoid rebuilding everything every time. Track the actual
+# dependency by the empty file asm\warnings.time.
 WARNFILES = asm\warnings.c include\warnings.h doc\warnings.src
 
 warnings:
 	$(RM_F) $(WARNFILES)
-	$(MAKE) $(WARNFILES)
+	$(MAKE) asm\warnings.time
 
-asm\warnings.c: asm\warnings.pl
+asm\warnings.time: $(ALLOBJ_NW:.$(O)=.c)
+	: > asm\warnings.time
+	$(MAKE) $(WARNFILES:=.time)
+
+asm\warnings.c.time: asm\warnings.pl asm\warnings.time
 	$(RUNPERL) $(srcdir)\asm\warnings.pl c asm\warnings.c $(srcdir)
+	: > asm\warnings.c.time
 
-include\warnings.h: asm\warnings.pl
+asm\warnings.c: asm\warnings.c.time
+	@: Side effect
+
+include\warnings.h.time: asm\warnings.pl asm\warnings.time
 	$(RUNPERL) $(srcdir)\asm\warnings.pl h include\warnings.h $(srcdir)
+	: > include\warnings.h.time
 
-doc\warnings.src: asm\warnings.pl
+include\warnings.h: include\warnings.h.time
+	@: Side effect
+
+doc\warnings.src.time: asm\warnings.pl asm\warnings.time
 	$(RUNPERL) $(srcdir)\asm\warnings.pl doc doc\warnings.src $(srcdir)
+	: > doc\warnings.src.time
+
+doc\warnings.src : doc\warnings.src.time
+	@: Side effect
 
 # Assembler token hash
 asm\tokhash.c: x86\insns.dat x86\regs.dat asm\tokens.dat asm\tokhash.pl \

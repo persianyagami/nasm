@@ -2137,9 +2137,13 @@ static void macho_dbg_linenum(const char *file_name, int32_t line_num, int32_t s
             }
         }
 
-        if(need_new_list) {
+        if (need_new_list)
             new_file_list(cur_file, cur_dir);
-        }
+    }
+
+    if (!need_new_list) {
+            nasm_free((void *)cur_file);
+            nasm_free((void *)cur_dir);
     }
 
     dbg_immcall = true;
@@ -2289,7 +2293,9 @@ static const struct dfmt macho32_df_dwarf = {
     macho_dbg_init,
     macho_dbg_linenum,
     null_debug_deflabel,
-    NULL,                       /* .debug_macros */
+    NULL,                       /* .debug_smacros */
+    NULL,                       /* .debug_include */
+    NULL,                       /* .debug_mmacros */
     null_debug_directive,
     null_debug_typevalue,
     macho_dbg_output,
@@ -2357,7 +2363,9 @@ static const struct dfmt macho64_df_dwarf = {
     macho_dbg_init,
     macho_dbg_linenum,
     null_debug_deflabel,
-    NULL,                       /* .debug_macros */
+    NULL,                       /* .debug_smacros */
+    NULL,                       /* .debug_include */
+    NULL,                       /* .debug_mmacros */
     null_debug_directive,
     null_debug_typevalue,
     macho_dbg_output,

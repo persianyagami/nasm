@@ -64,7 +64,9 @@ const struct dfmt df_cv8 = {
     cv8_init,                   /* .init */
     cv8_linenum,                /* .linenum */
     cv8_deflabel,               /* .debug_deflabel */
-    NULL,                       /* .debug_macros */
+    NULL,                       /* .debug_smacros */
+    NULL,                       /* .debug_include */
+    NULL,                       /* .debug_mmacros */
     null_debug_directive,       /* .debug_directive */
     cv8_typevalue,              /* .debug_typevalue */
     cv8_output,                 /* .debug_output */
@@ -306,7 +308,7 @@ static void build_type_table(struct coff_Section *const sect);
 static void cv8_cleanup(void)
 {
     struct cv8_symbol *sym;
-    struct source_file *file;
+    struct source_file *file, *ftmp;
 
     struct coff_Section *symbol_sect = coff_sects[cv8_state.symbol_sect];
     struct coff_Section *type_sect = coff_sects[cv8_state.type_sect];
@@ -317,10 +319,10 @@ static void cv8_cleanup(void)
     build_symbol_table(symbol_sect);
     build_type_table(type_sect);
 
-    list_for_each(file, cv8_state.source_files) {
+    list_for_each_safe(file, ftmp, cv8_state.source_files) {
         nasm_free(file->fullname);
         saa_free(file->lines);
-        free(file);
+        nasm_free(file);
     }
     hash_free(&cv8_state.file_hash);
 
@@ -399,8 +401,7 @@ static struct source_file *register_file(const char *filename)
 
         fullpath = nasm_realpath(filename);
 
-        file = nasm_zalloc(sizeof(*file));
-
+        nasm_new(file);
         file->filename = filename;
         file->fullname = fullpath;
         file->fullnamelen = strlen(fullpath);

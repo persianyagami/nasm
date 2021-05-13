@@ -40,6 +40,7 @@
 
 #include "nctype.h"
 #include <time.h>
+#include "ver.h"
 
 #include "nasm.h"
 #include "nasmlib.h"
@@ -420,36 +421,12 @@ static int32_t coff_section_names(char *name, int *bits)
             }
         }
 
-        /* Check if alignment might be needed */
-        if (align_flags) {
-            uint32_t sect_align_flags = coff_sects[i]->align_flags;
-
-            /* Compute the actual alignment */
-            unsigned int align = coff_alignment(align_flags);
-
-            /* Update section header as needed */
-            if (align_flags > sect_align_flags) {
-                coff_sects[i]->align_flags = align_flags;
-            }
-
-            /* Check if not already aligned */
-            /* XXX: other formats don't do this... */
-            if (coff_sects[i]->len % align) {
-                unsigned int padding = (align - coff_sects[i]->len) % align;
-                /* We need to write at most 8095 bytes */
-                char         buffer[8095];
-
-                nasm_assert(padding <= sizeof buffer);
-
-                if (coff_sects[i]->flags & IMAGE_SCN_CNT_CODE) {
-                    /* Fill with INT 3 instructions */
-                    memset(buffer, 0xCC, padding);
-                } else {
-                    memset(buffer, 0x00, padding);
-                }
-                saa_wbytes(coff_sects[i]->data, buffer, padding);
-                coff_sects[i]->len += padding;
-            }
+        /*
+         * Alignment can be increased, but never decreased. However,
+         * specifying a narrower alignment is permitted and ignored.
+         */
+        if (align_flags > coff_sects[i]->align_flags) {
+            coff_sects[i]->align_flags = align_flags;
         }
     }
 
@@ -959,7 +936,7 @@ static void coff_write(void)
         i = IMAGE_FILE_MACHINE_I386;
     fwriteint16_t(i,                    ofile); /* machine type */
     fwriteint16_t(coff_nsects,               ofile); /* number of sections */
-    fwriteint32_t(time(NULL),           ofile); /* time stamp */
+    fwriteint32_t(posix_timestamp(), ofile); /* timestamp */
     fwriteint32_t(sympos,               ofile);
     fwriteint32_t(coff_nsyms + initsym,      ofile);
     fwriteint16_t(0,                    ofile); /* no optional header */

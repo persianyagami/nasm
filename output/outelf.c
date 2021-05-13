@@ -84,6 +84,7 @@ static struct hash_table section_by_name;
 static struct elf_symbol *fwds;
 
 static char elf_module[FILENAME_MAX];
+static char elf_dir[FILENAME_MAX];
 
 extern const struct ofmt of_elf32;
 extern const struct ofmt of_elf64;
@@ -111,11 +112,6 @@ static int add_sectname(const char *, const char *);
 
 /* First debugging section index */
 static int sec_debug;
-
-struct erel {
-    int                 offset;
-    int                 info;
-};
 
 struct symlininfo {
     int                 offset;
@@ -552,8 +548,10 @@ static void elf_init(void)
         ".shstrtab", ".strtab", ".symtab", ".symtab_shndx", NULL
     };
     const char * const *p;
+    const char * cur_path = nasm_realpath(inname);
 
     strlcpy(elf_module, inname, sizeof(elf_module));
+    strlcpy(elf_dir, nasm_dirname(cur_path), sizeof(elf_dir));
     sects = NULL;
     nsects = sectlen = 0;
     syms = saa_init((int32_t)sizeof(struct elf_symbol));
@@ -2435,7 +2433,9 @@ static const struct dfmt elf32_df_dwarf = {
     dwarf32_init,
     dwarf_linenum,
     null_debug_deflabel,
-    NULL,                       /* .debug_macros */
+    NULL,                       /* .debug_smacros */
+    NULL,                       /* .debug_include */
+    NULL,                       /* .debug_mmacros */
     null_debug_directive,
     debug_typevalue,
     dwarf_output,
@@ -2449,7 +2449,9 @@ static const struct dfmt elf32_df_stabs = {
     null_debug_init,
     stabs_linenum,
     null_debug_deflabel,
-    NULL,                       /* .debug_macros */
+    NULL,                       /* .debug_smacros */
+    NULL,                       /* .debug_include */
+    NULL,                       /* .debug_mmacros */
     null_debug_directive,
     debug_typevalue,
     stabs_output,
@@ -2489,7 +2491,9 @@ static const struct dfmt elf64_df_dwarf = {
     dwarf64_init,
     dwarf_linenum,
     null_debug_deflabel,
-    NULL,                       /* .debug_macros */
+    NULL,                       /* .debug_smacros */
+    NULL,                       /* .debug_include */
+    NULL,                       /* .debug_mmacros */
     null_debug_directive,
     debug_typevalue,
     dwarf_output,
@@ -2503,7 +2507,9 @@ static const struct dfmt elf64_df_stabs = {
     null_debug_init,
     stabs_linenum,
     null_debug_deflabel,
-    NULL,                       /* .debug_macros */
+    NULL,                       /* .debug_smacros */
+    NULL,                       /* .debug_include */
+    NULL,                       /* .debug_mmacros */
     null_debug_directive,
     debug_typevalue,
     stabs_output,
@@ -2543,7 +2549,9 @@ static const struct dfmt elfx32_df_dwarf = {
     dwarfx32_init,
     dwarf_linenum,
     null_debug_deflabel,
-    NULL,                       /* .debug_macros */
+    NULL,                       /* .debug_smacros */
+    NULL,                       /* .debug_include */
+    NULL,                       /* .debug_mmacros */
     null_debug_directive,
     debug_typevalue,
     dwarf_output,
@@ -2557,7 +2565,9 @@ static const struct dfmt elfx32_df_stabs = {
     null_debug_init,
     stabs_linenum,
     null_debug_deflabel,
-    NULL,                       /* .debug_macros */
+    NULL,                       /* .debug_smacros */
+    NULL,                       /* .debug_include */
+    NULL,                       /* .debug_mmacros */
     null_debug_directive,
     debug_typevalue,
     stabs_output,
@@ -3295,7 +3305,8 @@ static void dwarf_generate(void)
         saa_write32(pinforel, (dwarf_linesym << 8) +  R_386_32); /* reloc to line */
         saa_write32(pinforel, 0);
         saa_write32(pinfo,0);       /* DW_AT_stmt_list */
-        saa_wbytes(pinfo, elf_module, strlen(elf_module)+1);
+        saa_wbytes(pinfo, elf_module, strlen(elf_module)+1); /* DW_AT_name */
+        saa_wbytes(pinfo, elf_dir, strlen(elf_dir)+1); /* DW_AT_comp_dir */
         saa_wbytes(pinfo, nasm_signature(), nasm_signature_len()+1);
         saa_write16(pinfo,DW_LANG_Mips_Assembler);
         saa_write8(pinfo,2);        /* abbrviation number LEB128u */
@@ -3334,7 +3345,8 @@ static void dwarf_generate(void)
         saa_write32(pinforel, (dwarf_linesym << 8) + R_X86_64_32); /* reloc to line */
         saa_write32(pinforel, 0);
         saa_write32(pinfo,0);			/* DW_AT_stmt_list */
-        saa_wbytes(pinfo, elf_module, strlen(elf_module)+1);
+        saa_wbytes(pinfo, elf_module, strlen(elf_module)+1); /* DW_AT_name */
+        saa_wbytes(pinfo, elf_dir, strlen(elf_dir)+1); /* DW_AT_comp_dir */
         saa_wbytes(pinfo, nasm_signature(), nasm_signature_len()+1);
         saa_write16(pinfo,DW_LANG_Mips_Assembler);
         saa_write8(pinfo,2);			/* abbrviation number LEB128u */
@@ -3374,7 +3386,8 @@ static void dwarf_generate(void)
         saa_write64(pinforel, (dwarf_linesym << 32) +  R_X86_64_32); /* reloc to line */
         saa_write64(pinforel, 0);
         saa_write32(pinfo,0);			/* DW_AT_stmt_list */
-        saa_wbytes(pinfo, elf_module, strlen(elf_module)+1);
+        saa_wbytes(pinfo, elf_module, strlen(elf_module)+1); /* DW_AT_name */
+        saa_wbytes(pinfo, elf_dir, strlen(elf_dir)+1); /* DW_AT_comp_dir */
         saa_wbytes(pinfo, nasm_signature(), nasm_signature_len()+1);
         saa_write16(pinfo,DW_LANG_Mips_Assembler);
         saa_write8(pinfo,2);			/* abbrviation number LEB128u */
@@ -3411,6 +3424,8 @@ static void dwarf_generate(void)
     saa_write8(pabbrev,DW_AT_stmt_list);
     saa_write8(pabbrev,DW_FORM_data4);
     saa_write8(pabbrev,DW_AT_name);
+    saa_write8(pabbrev,DW_FORM_string);
+    saa_write8(pabbrev,DW_AT_comp_dir);
     saa_write8(pabbrev,DW_FORM_string);
     saa_write8(pabbrev,DW_AT_producer);
     saa_write8(pabbrev,DW_FORM_string);

@@ -424,6 +424,12 @@ static ObjRecord *obj_name(ObjRecord * orp, const char *name)
     int len = strlen(name);
     uint8_t *ptr;
 
+    if (len > UINT8_MAX) {
+        nasm_warn(WARN_OTHER, "truncating object name `%.64s...' to %u bytes",
+                  name, UINT8_MAX);
+        len = UINT8_MAX;
+    }
+
     orp = obj_check(orp, len + 1);
     ptr = orp->buf + orp->used;
     *ptr++ = len;
@@ -2650,7 +2656,9 @@ static const struct dfmt borland_debug_form = {
     dbgbi_init,
     dbgbi_linnum,
     dbgbi_deflabel,
-    NULL,                       /* .debug_macros */
+    NULL,                       /* .debug_smacros */
+    NULL,                       /* .debug_include */
+    NULL,                       /* .debug_mmacros */
     null_debug_directive,
     dbgbi_typevalue,
     dbgbi_output,

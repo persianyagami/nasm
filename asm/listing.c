@@ -130,6 +130,7 @@ static void list_cleanup(void)
     list_emit();
     fclose(listfp);
     listfp = NULL;
+    active_list_options = 0;
 }
 
 static void list_init(const char *fname)
@@ -152,6 +153,8 @@ static void list_init(const char *fname)
         nasm_nonfatal("unable to open listing file `%s'", fname);
         return;
     }
+
+    active_list_options = list_options | 1;
 
     *listline = '\0';
     listlineno = 0;
@@ -337,7 +340,7 @@ static void list_downlevel(int type)
     }
 }
 
-static void list_error(errflags severity, const char *fmt, ...)
+static void printf_func(2, 3) list_error(errflags severity, const char *fmt, ...)
 {
     va_list ap;
 
