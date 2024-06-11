@@ -1,4 +1,4 @@
-dnl Process this file with autoconf 2.69 or later to produce
+dnl Process this file with autoconf 2.71 or later to produce
 dnl a configure script.
 AC_PREREQ([2.71])
 AC_INIT
@@ -15,34 +15,18 @@ AH_BOTTOM([
 dnl This prevents us from running Wine and thinking we are not
 dnl cross-compiling when in fact we are; running Wine here is at
 dnl the best very slow and doesn't buy us a single thing at all.
-WINELOADER=/dev/null
-export WINELOADER
-
-dnl Get the canonical target system name
-AC_CANONICAL_HOST
+PA_CROSS_COMPILE
 
 dnl Enable any available C extensions
-AC_PROG_CC
+PA_PROG_CC
 AC_USE_SYSTEM_EXTENSIONS
 PA_ADD_CPPFLAGS([-std=c17], [], [],
 [PA_ADD_CPPFLAGS([-std=c11], [], [],
  [PA_ADD_CPPFLAGS([-std=c99])])])
 
-dnl Compile and link with gdb debug extensions
-PA_ARG_ENABLED([gdb],
- [compile with extra debug information for GDB debugger],
- [PA_ADD_CFLAGS([-ggdb3])])
-
-dnl Disable optimization
-PA_ARG_DISABLED([optimization],
- [compile without optimization (-O0) to help debugging],
- [PA_ADD_CFLAGS([-O0])
-  PA_ADD_CFLAGS([-fno-omit-frame-pointer])])
-
-dnl Profiling
-PA_ARG_ENABLED([profiling],
- [compile with profiling (-pg option)],
- [PA_ADD_CFLAGS([-pg])])
+dnl Options for debugging and profiling
+PA_OPTION_DEBUG
+PA_OPTION_PROFILING
 
 dnl Large files
 AC_SYS_LARGEFILE
@@ -56,13 +40,6 @@ AH_TEMPLATE(ABORT_ON_PANIC,
 
 dnl Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_SIZE_T
-AC_C_BIGENDIAN(AC_DEFINE(WORDS_BIGENDIAN),AC_DEFINE(WORDS_LITTLEENDIAN),,)
-AH_TEMPLATE(WORDS_BIGENDIAN,
-[Define to 1 if your processor stores words with the most significant
-byte first (like Motorola and SPARC, unlike Intel and VAX).])
-AH_TEMPLATE(WORDS_LITTLEENDIAN,
-[Define to 1 if your processor stores words with the least significant
-byte first (like Intel and VAX, unlike Motorola and SPARC).])
 
 dnl LLVM doesn't error out on invalid -W options unless this option is
 dnl specified first.  Enable this so this script can actually discover
@@ -168,9 +145,19 @@ AC_C_RESTRICT
 dnl Checks for header files.
 AC_CHECK_INCLUDES_DEFAULT
 
+dnl Check for variadic macro support
+PA_VARIADIC_MACROS
+
+dnl Handle Windows embedded manifests
+AS_CASE([$host],
+	[*-win* | *-mingw*],
+	[AC_CHECK_TOOL(WINDRES, windres, false)
+	 AS_IF([test x"$WINDRES" != xfalse],
+	 [AC_SUBST(MANIFEST, ['win/manifest.$(O)'])])])
+
 PA_ADD_HEADERS(string.h)
 PA_ADD_HEADERS(stdarg.h)
-AC_CHECK_HEADERS(inttypes.h)
+PA_ADD_HEADERS(inttypes.h)
 AC_CHECK_HEADERS(strings.h)
 AC_HEADER_STDBOOL
 AC_CHECK_HEADERS(stdnoreturn.h)
@@ -261,25 +248,7 @@ AC_SUBST([PDFOPT])
 dnl
 dnl Look for byte-swapping support...
 dnl
-PA_ADD_HEADERS(endian.h sys/endian.h machine/endian.h)
-PA_HAVE_FUNC(cpu_to_le16, (0))
-PA_HAVE_FUNC(cpu_to_le32, (0))
-PA_HAVE_FUNC(cpu_to_le64, (0))
-PA_HAVE_FUNC(__cpu_to_le16, (0))
-PA_HAVE_FUNC(__cpu_to_le32, (0))
-PA_HAVE_FUNC(__cpu_to_le64, (0))
-PA_HAVE_FUNC(htole16, (0))
-PA_HAVE_FUNC(htole32, (0))
-PA_HAVE_FUNC(htole64, (0))
-PA_HAVE_FUNC(__bswap_16, (0))
-PA_HAVE_FUNC(__bswap_32, (0))
-PA_HAVE_FUNC(__bswap_64, (0))
-PA_HAVE_FUNC(__builtin_bswap16, (0))
-PA_HAVE_FUNC(__builtin_bswap32, (0))
-PA_HAVE_FUNC(__builtin_bswap64, (0))
-PA_HAVE_FUNC(_byteswap_ushort, (0))
-PA_HAVE_FUNC(_byteswap_ulong, (0))
-PA_HAVE_FUNC(_byteswap_uint64, (0))
+PA_ENDIAN
 
 dnl
 dnl Some rather useful gcc extensions...
@@ -292,53 +261,22 @@ dnl Check for supported gcc attributes; some compilers (e.g. Sun CC)
 dnl support these, but don't define __GNUC__ as they don't support
 dnl some other features of gcc.
 dnl
-PA_ADD_CFLAGS([-Werror=attributes])
-PA_FUNC_ATTRIBUTE(noreturn)
-PA_FUNC_ATTRIBUTE(returns_nonnull,,,,,never_null)
-PA_FUNC_ATTRIBUTE(malloc)
-PA_FUNC_ATTRIBUTE(alloc_size,[1])
-PA_FUNC_ATTRIBUTE(alloc_size,[1,2])
-PA_FUNC_ATTRIBUTE(sentinel,,, [const char *, ...], ["a","b",NULL],end_with_null)
-PA_FUNC_ATTRIBUTE(format, [printf,1,2], int, [const char *, ...], ["%d",1])
-PA_FUNC_ATTRIBUTE(const)
-PA_FUNC_ATTRIBUTE(pure)
-PA_FUNC_ATTRIBUTE(cold,,,,,unlikely_func)
-PA_FUNC_ATTRIBUTE(unused)
-PA_FUNC_ATTRIBUTE_ERROR
+PA_COMMON_ATTRIBUTES
 
 dnl
 dnl support function sections (if available)
 dnl
-PA_ARG_DISABLED([sections],
- [do not try to compile with function/data section support],
- [],
- [PA_ADD_CFLAGS([-ffunction-sections])
-  PA_ADD_CFLAGS([-fdata-sections])
-  PA_ADD_LDFLAGS([-Wl,--gc-sections])]
- )
+PA_OPTION_GC
 
 dnl
 dnl support LTO
 dnl
-PA_ARG_ENABLED([lto],
- [compile with gcc-style link time optimization],
- [PA_ADD_CFLAGS([-flto])
-  dnl Note: we use _PROG rather than _TOOL since we are prepending the full
-  dnl CC name which ought to already contain the host triplet if needed
-  ccbase=`echo "$CC" | awk '{ print $1; }'`
-  AC_CHECK_PROGS(CC_AR, [${ccbase}-ar], [$ac_cv_prog_AR])
-  AR="$CC_AR"
-  AC_CHECK_PROGS(CC_RANLIB, [${ccbase}-ranlib], [$ac_cv_prog_RANLIB])
-  RANLIB="$CC_RANLIB"], [])
+PA_OPTION_LTO
 
 dnl
 dnl support sanitizers (if available)
 dnl
-PA_ARG_ENABLED([sanitizer],
- [compile with sanitizers enabled],
- [PA_ADD_CFLAGS([-fno-omit-frame-pointer])
-  PA_ADD_CFLAGS([-fsanitize=address])
-  PA_ADD_CFLAGS([-fsanitize=undefined])])
+PA_OPTION_SANITIZER
 
 dnl
 dnl Don't make symbols visible, there is no point and it just
@@ -356,22 +294,8 @@ PA_ARG_DISABLED([pedantic],
 [disable some extra paranoid compiler warnings],
 [],
 [PA_ADD_CFLAGS([-W])
- PA_ADD_CFLAGS([-pedantic])
- PA_ADD_CFLAGS([-Wc90-c99-compat])
- PA_ADD_CFLAGS([-Wc99-compat])
- PA_ADD_CFLAGS([-Wc99-extensions])
+PA_ADD_CFLAGS([-pedantic])
 ])
-dnl Suppress format warning on Windows targets due to their <inttypes.h>
-PA_ADD_CFLAGS([-Wpedantic-ms-format],[-Wno-pedantic-ms-format])
-PA_ADD_CFLAGS([-Wlong-long],[-Wno-long-long])
-dnl This is needed because we intentionally expect strncpy() to fill
-dnl in a zero-padded (not zero-terminated) buffer in several backends
-PA_ADD_CFLAGS([-Wstringop-truncation],[-Wno-stringop-truncation])
-dnl This is needed because we assume 2's-completement signed arithmetic;
-dnl on compilers with gcc-like command line syntax we pass the -fwrapv
-dnl option for exactly that reason.
-PA_ADD_CFLAGS([-Wshift-negative-value],[-Wno-shift-negative-value])
-
 dnl Want to turn this on at some point...
 dnl PA_ADD_CFLAGS([-Wwrite-strings])
 PA_ARG_ENABLED([werror],
@@ -388,6 +312,19 @@ PA_ARG_ENABLED([werror],
   PA_ADD_CFLAGS([-Werror=comment])
   PA_ADD_CFLAGS([-Werror=vla])]
 )
+
+dnl Variadic macros are used in this code, but only under explicit guard
+PA_ADD_CFLAGS([-Wvariadic-macros],[-Wno-variadic-macros])
+dnl Suppress format warning on Windows targets due to their <inttypes.h>
+PA_ADD_CFLAGS([-Wpedantic-ms-format],[-Wno-pedantic-ms-format])
+PA_ADD_CFLAGS([-Wlong-long],[-Wno-long-long])
+dnl This is needed because we intentionally expect strncpy() to fill
+dnl in a zero-padded (not zero-terminated) buffer in several backends
+PA_ADD_CFLAGS([-Wstringop-truncation],[-Wno-stringop-truncation])
+dnl This is needed because we assume 2's-completement signed arithmetic;
+dnl on compilers with gcc-like command line syntax we pass the -fwrapv
+dnl option for exactly that reason.
+PA_ADD_CFLAGS([-Wshift-negative-value],[-Wno-shift-negative-value])
 
 dnl Warnings that are probabilistic based on the compiler version, and
 dnl only should be used specifically when looking for opportunities to
@@ -407,11 +344,6 @@ dnl by -Werror options, so run this *after* those options are added.
 dnl
 PA_CHECK_BAD_STDC_INLINE
 PA_C_TYPEOF
-
-dnl
-dnl support ccache
-dnl
-PA_ARG_ENABLED([ccache], [compile with ccache], [CC="ccache $CC"], [])
 
 AC_CONFIG_FILES([Makefile doc/Makefile])
 AC_OUTPUT

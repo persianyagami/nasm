@@ -3,10 +3,20 @@
 # Run this script to regenerate autoconf files
 #
 recheck=false
-if [ x"$1" = x--recheck ]; then
-    recheck=true
-    config=$(sh config.status --config 2>/dev/null)
-fi
+for arg; do
+    case x"$arg" in
+	x--recheck)
+	    recheck=true
+	    config=$(sh config.status --config 2>/dev/null)
+	    ;;
+	x--clearenv)
+	    unset AUTOCONF AUTOMAKE ACLOCAL AUTOHEADER ACLOCAL_PATH
+	    ;;
+	*)
+	    echo "$0: unknown option: $arg" 1>&2
+	    ;;
+    esac
+done
 
 # This allows for overriding the default autoconf programs
 AUTOCONF="${AUTOCONF:-${AUTOTOOLS_PREFIX}autoconf}"
@@ -43,12 +53,29 @@ if test ! -f autoconf/aclocal.m4; then
     # aclocal failed, revert to previous files
     mv -f autoconf/m4.old/*.m4 autoconf/m4/
     mv -f autoconf/aclocal.m4.old autoconf/aclocal.m4
+    exit 1
 fi
 rm -rf autoconf/*m4.old
 "$AUTOHEADER" -B autoconf
 "$AUTOCONF" -B autoconf
-rm -rf autom4te.cache config.log config.status \
-   config/config.h Makefile doc/Makefile
+(
+    echo '#!/bin/sh'
+    "$AUTOCONF" -B autoconf \
+		-t AC_CONFIG_HEADERS:'rm -f $*' \
+		-t AC_CONFIG_FILES:'rm -f $*'
+    echo 'rm -f config.log config.status'
+    echo 'rm -rf autom4te.cache'
+) > autoconf/clean.sh
+chmod +x autoconf/clean.sh
+sh autoconf/clean.sh
+
+rm -f configure~ || true
+
+# Try to regenerate unconfig.h if Perl is available and unconfig.pl
+# is present in the autoconf directory.
+if [ -n "$(which perl)" -a -f autoconf/unconfig.pl ]; then
+    perl autoconf/unconfig.pl . config/config.h.in config/unconfig.h
+fi
 
 if $recheck; then
     # This bizarre statement has to do with how config.status quotes its output
