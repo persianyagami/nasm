@@ -21,7 +21,7 @@
 
 static const char xdigit[] = "0123456789ABCDEF";
 
-#define HEX(a,b) (*(a)=xdigit[((b)>>4)&15],(a)[1]=xdigit[(b)&15]);
+#define HEX(a,b) (*(a)=xdigit[((b)>>4)&15],(a)[1]=xdigit[(b)&15])
 
 uint64_t list_options, active_list_options;
 bool user_nolist;
@@ -365,10 +365,13 @@ static void list_update_options(const char *str)
             break;
         default:
             mask = list_option_mask(c);
-            if (state)
+            if (state) {
                 list_options |= mask;
-            else
+                active_list_options |= mask;
+            } else {
                 list_options &= ~mask;
+                active_list_options &= ~mask;
+            }
             break;
         }
     }
