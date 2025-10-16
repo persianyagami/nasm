@@ -2,6 +2,9 @@
 *.aout
 *.aoutb
 *.bin
+*.bin16
+*.bin32
+*.bin64
 *.coff
 *.com
 *.dbg
@@ -11,6 +14,7 @@
 *.ith
 *.lib
 *.lst
+*.log
 *.map
 *.mo32
 *.mo64
@@ -95,6 +99,7 @@ TAGS
 /test/perf/*.asm
 /test/testresults
 /test/ffmpegtest
+/test/x264test
 /version.h
 /version.mac
 /version.mak
@@ -118,3 +123,4 @@ TAGS
 /autoconf/config.*
 /autoconf/install-sh
 /autoconf/clean.sh
+/travis/test/_version.stdout

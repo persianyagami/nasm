@@ -86,7 +86,7 @@ NDISASM = disasm\ndisasm.obj
 PROGOBJ = $(NASM) $(NDISASM)
 PROGS   = nasm$(X) ndisasm$(X)
 
-# Files dependent on extracted warnings
+# Files dependent on warnings.dat
 WARNOBJ   = asm\warnings.obj
 WARNFILES = asm\warnings_c.h include\warnings.h doc\warnings.src
 
@@ -136,7 +136,7 @@ LIBOBJ_NW = \
 	\
 	nasmlib\ver.obj \
 	nasmlib\alloc.obj nasmlib\asprintf.obj \
-	nasmlib\crc32.obj nasmlib\crc64.obj nasmlib\md5c.obj \
+	nasmlib\crc32b.obj nasmlib\crc64.obj nasmlib\md5c.obj \
 	nasmlib\string.obj nasmlib\nctype.obj \
 	nasmlib\file.obj nasmlib\mmap.obj nasmlib\ilog2.obj \
 	nasmlib\realpath.obj nasmlib\path.obj \
@@ -175,7 +175,7 @@ ZLIBOBJ = \
 
 LIBOBJ    = $(LIBOBJ_W) $(LIBOBJ_NW) $(ZLIB)
 ALLOBJ_W  = $(NASM) $(LIBOBJ_W)
-ALLOBJ    = $(PROGOBJ) $(LIBOBJ)
+ALLOBJ    = $(PROGOBJ) $(LIBOBJ) $(LIBOBJ_DIS)
 SUBDIRS  = stdlib nasmlib include config output asm disasm x86 \
 	   common zlib macros misc
 XSUBDIRS = nsis win test doc editors
@@ -344,7 +344,25 @@ editors\nasmtok.json: editors\nasmtok.pl asm\tokhash.c asm\pptok.c \
 		 version.mak
 	$(RUNPERL) $(srcdir)\editors\nasmtok.pl -json $@ $(srcdir) $(objdir)
 
-editors: $(EDITORS)
+editors: $(EDITORS) $(PHONY)
+
+asm\warnings_c.h: asm\warnings.pl asm\warnings.dat
+	$(RUNPERL) $(srcdir)\asm\warnings.pl c asm\warnings_c.h \
+		$(srcdir)\asm\warnings.dat
+
+include\warnings.h: asm\warnings.pl asm\warnings.dat
+	$(RUNPERL) $(srcdir)\asm\warnings.pl h include\warnings.h \
+		$(srcdir)\asm\warnings.dat
+
+doc\warnings.src: asm\warnings.pl asm\warnings.dat
+	$(RUNPERL) $(srcdir)\asm\warnings.pl doc doc\warnings.src \
+		$(srcdir)\asm\warnings.dat
+
+$(PERLREQ): $(DIRS)
+
+perlreq: $(PERLREQ) $(PHONY)
+
+warnings: $(WARNFILES) $(PHONY)
 
 #-- End Generated File Rules --#
 

@@ -30,9 +30,9 @@ enum match_result {
     MERR_OPSIZEINVAL,
     MERR_OPSIZEMISSING,
     MERR_OPSIZEMISMATCH,
+    MERR_MASKNOTHERE,
     MERR_BRNOTHERE,
     MERR_BRNUMMISMATCH,
-    MERR_MASKNOTHERE,
     MERR_DECONOTHERE,
     MERR_BADZU,
     MERR_MEMZU,
@@ -250,17 +250,6 @@ static void debug_macro_out(const struct out_data *data)
  * and verify backend compatibility.
  */
 /*
- * This warning is currently issued by backends, but in the future
- * this code should be centralized.
- *
- *!zeroing [on] \c{RES}\e{x} in initialized section becomes zero
- *!  a \c{RES}\e{x} directive was used in a section which contains
- *!  initialized data, and the output format does not support
- *!  this. Instead, this will be replaced with explicit zero
- *!  content, which may produce a large output file.
- */
-
-/*
  * Add the entries in struct out_data for the rather bizarre legacy
  * backend interface, and then submit to the backend.
  *
@@ -400,78 +389,6 @@ static void out(struct out_data *data)
                 asize = amax = 0;   /* No longer an address */
             }
         } else {
-            /*!
-             *!reloc-abs-byte [off] 8-bit absolute section-crossing relocation
-             *!  warns that an 8-bit absolute relocation that could
-             *!  not be resolved at assembly time was generated in
-             *!  the output format.
-             *!
-             *!  This is usually normal, but may not be handled by all
-             *!  possible target environments
-             */
-            /*!
-             *!reloc-abs-word [off] 16-bit absolute section-crossing relocation
-             *!  warns that a 16-bit absolute relocation that could
-             *!  not be resolved at assembly time was generated in
-             *!  the output format.
-             *!
-             *!  This is usually normal, but may not be handled by all
-             *!  possible target environments
-             */
-            /*!
-             *!reloc-abs-dword [off] 32-bit absolute section-crossing relocation
-             *!  warns that a 32-bit absolute relocation that could
-             *!  not be resolved at assembly time was generated in
-             *!  the output format.
-             *!
-             *!  This is usually normal, but may not be handled by all
-             *!  possible target environments
-             */
-            /*!
-             *!reloc-abs-qword [off] 64-bit absolute section-crossing relocation
-             *!  warns that a 64-bit absolute relocation that could
-             *!  not be resolved at assembly time was generated in
-             *!  the output format.
-             *!
-             *!  This is usually normal, but may not be handled by all
-             *!  possible target environments
-             */
-            /*!
-             *!reloc-rel-byte [off] 8-bit relative section-crossing relocation
-             *!  warns that an 8-bit relative relocation that could
-             *!  not be resolved at assembly time was generated in
-             *!  the output format.
-             *!
-             *!  This is usually normal, but may not be handled by all
-             *!  possible target environments
-             */
-            /*!
-             *!reloc-rel-word [off] 16-bit relative section-crossing relocation
-             *!  warns that a 16-bit relative relocation that could
-             *!  not be resolved at assembly time was generated in
-             *!  the output format.
-             *!
-             *!  This is usually normal, but may not be handled by all
-             *!  possible target environments
-             */
-            /*!
-             *!reloc-rel-dword [off] 32-bit relative section-crossing relocation
-             *!  warns that a 32-bit relative relocation that could
-             *!  not be resolved at assembly time was generated in
-             *!  the output format.
-             *!
-             *!  This is usually normal, but may not be handled by all
-             *!  possible target environments
-             */
-            /*!
-             *!reloc-rel-qword [off] 64-bit relative section-crossing relocation
-             *!  warns that an 64-bit relative relocation that could
-             *!  not be resolved at assembly time was generated in
-             *!  the output format.
-             *!
-             *!  This is usually normal, but may not be handled by all
-             *!  possible target environments
-             */
             int warn;
             const char *type;
 
@@ -538,11 +455,6 @@ static void out(struct out_data *data)
             nasm_nonfatal("%u-bit signed relocation unsupported by output format %s",
                           (unsigned int)(asize << 3), ofmt->shortname);
         } else {
-            /*!
-             *!zext-reloc [on] relocation zero-extended to match output format
-             *!  warns that a relocation has been zero-extended due
-             *!  to limitations in the output format.
-             */
             nasm_warn(WARN_ZEXT_RELOC,
                        "%u-bit %s relocation zero-extended from %u bits",
                        (unsigned int)(asize << 3),
@@ -720,6 +632,82 @@ static void out_reladdr(struct out_data *data, const struct operand *opx,
     data->twrt     = opx->wrt;
     data->relbase  = data->loc.offset + (data->inslen - data->insoffs);
     out(data);
+}
+
+/* Issue an error message on match failure */
+static void no_match_error(enum match_result m, const insn *ins)
+{
+    /* No match */
+    switch (m) {
+    case MERR_INVALOP:
+        nasm_holderr("invalid combination of opcode and operands");
+        break;
+    case MERR_OPSIZEINVAL:
+        nasm_holderr("invalid operand sizes for instruction");
+        break;
+    case MERR_OPSIZEMISSING:
+        nasm_holderr("operation size not specified");
+        break;
+    case MERR_OPSIZEMISMATCH:
+        nasm_holderr("mismatch in operand sizes");
+        break;
+    case MERR_BRNOTHERE:
+        nasm_holderr("broadcast not permitted on this operand");
+        break;
+    case MERR_BRNUMMISMATCH:
+        nasm_holderr("mismatch in the number of broadcasting elements");
+        break;
+    case MERR_MASKNOTHERE:
+        nasm_holderr("mask not permitted on this operand");
+        break;
+    case MERR_DECONOTHERE:
+        nasm_holderr("unsupported mode decorator for instruction");
+        break;
+    case MERR_BADCPU:
+        nasm_holderr("no instruction for this cpu level");
+        break;
+    case MERR_BADMODE:
+        nasm_holderr("instruction not supported in %d-bit mode", ins->bits);
+        break;
+    case MERR_ENCMISMATCH:
+        if (!ins->prefixes[PPS_REX]) {
+            nasm_holderr("instruction not encodable without explicit prefix");
+        } else {
+            nasm_holderr("instruction not encodable with %s prefix",
+                          prefix_name(ins->prefixes[PPS_REX]));
+        }
+        break;
+    case MERR_BADBND:
+    case MERR_BADREPNE:
+        nasm_holderr("%s prefix is not allowed",
+                      prefix_name(ins->prefixes[PPS_REP]));
+        break;
+    case MERR_REGSETSIZE:
+        nasm_holderr("invalid register set size");
+        break;
+    case MERR_REGSET:
+        nasm_holderr("register set not valid for operand");
+        break;
+    case MERR_WRONGIMM:
+        nasm_holderr("operand/operator invalid for this instruction");
+        break;
+    case MERR_BADZU:
+        nasm_holderr("{zu} not applicable to this instruction");
+        break;
+    case MERR_MEMZU:
+        nasm_holderr("{zu} invalid for non-register destination");
+        break;
+    case MERR_BADNF:
+        nasm_holderr("{nf} not available for this instruction");
+        break;
+    case MERR_REQNF:
+        nasm_holderr("{nf} required for this instruction");
+        break;
+    default:
+        if (m < MOK_GOOD)
+            nasm_holderr("invalid use of instruction");
+        break;
+    }
 }
 
 /* This is a real hack. The jcc8 or jmp8 byte code must come first. */
@@ -904,7 +892,6 @@ static int64_t assemble(insn *instruction)
     const struct itemplate *temp;
     enum match_result m;
     const int64_t start = instruction->loc.offset;
-    const int bits = instruction->bits;
 
     if (instruction->opcode == I_none)
         return 0;
@@ -1050,27 +1037,9 @@ static int64_t assemble(insn *instruction)
                  * warning classes for "obsolete but valid for this
                  * specific CPU" and "obsolete and gone."
                  *
-                 *!obsolete-removed [on] instruction obsolete and removed on the target CPU
-                 *!  warns for an instruction which has been removed
-                 *!  from the architecture, and is no longer included
-                 *!  in the CPU definition given in the \c{[CPU]}
-                 *!  directive, for example \c{POP CS}, the opcode for
-                 *!  which, \c{0Fh}, instead is an opcode prefix on
-                 *!  CPUs newer than the first generation 8086.
-                 *
-                 *!obsolete-nop [on] instruction obsolete and is a noop on the target CPU
-                 *!  warns for an instruction which has been removed
-                 *!  from the architecture, but has been architecturally
-                 *!  defined to be a noop for future CPUs.
-                 *
-                 *!obsolete-valid [on] instruction obsolete but valid on the target CPU
-                 *!  warns for an instruction which has been removed
-                 *!  from the architecture, but is still valid on the
-                 *!  specific CPU given in the \c{CPU} directive. Code
-                 *!  using these instructions is most likely not
-                 *!  forward compatible.
+                 * This currently doesn't really happen correctly;
+                 * it requires better information in insns.dat.
                  */
-
                 whathappened = never ? "never implemented" : "obsolete";
 
                 if (!never && !iflag_cmp_cpu_level(&insns_flags[temp->iflag_idx], &cpu)) {
@@ -1089,7 +1058,11 @@ static int64_t assemble(insn *instruction)
             }
 
             data.inslen = calcsize(instruction, temp);
-            nasm_assert(data.inslen >= 0);
+
+            /* This can happen if the instruction generated an error */
+            if (data.inslen <= 0)
+                return 0;
+
             data.inslen = merge_resb(instruction, data.inslen);
 
             data.insoffs = 0;
@@ -1101,75 +1074,7 @@ static int64_t assemble(insn *instruction)
 
             nasm_assert(data.loc.offset - start == data.inslen);
         } else {
-            /* No match */
-            switch (m) {
-            case MERR_INVALOP:
-            default:
-                nasm_nonfatal("invalid combination of opcode and operands");
-                break;
-            case MERR_OPSIZEINVAL:
-                nasm_nonfatal("invalid operand sizes for instruction");
-                break;
-            case MERR_OPSIZEMISSING:
-                nasm_nonfatal("operation size not specified");
-                break;
-            case MERR_OPSIZEMISMATCH:
-                nasm_nonfatal("mismatch in operand sizes");
-                break;
-            case MERR_BRNOTHERE:
-                nasm_nonfatal("broadcast not permitted on this operand");
-                break;
-            case MERR_BRNUMMISMATCH:
-                nasm_nonfatal("mismatch in the number of broadcasting elements");
-                break;
-            case MERR_MASKNOTHERE:
-                nasm_nonfatal("mask not permitted on this operand");
-                break;
-            case MERR_DECONOTHERE:
-                nasm_nonfatal("unsupported mode decorator for instruction");
-                break;
-            case MERR_BADCPU:
-                nasm_nonfatal("no instruction for this cpu level");
-                break;
-            case MERR_BADMODE:
-                nasm_nonfatal("instruction not supported in %d-bit mode", bits);
-                break;
-            case MERR_ENCMISMATCH:
-                if (!instruction->prefixes[PPS_REX]) {
-                    nasm_nonfatal("instruction not encodable without explicit prefix");
-                } else {
-                    nasm_nonfatal("instruction not encodable with %s prefix",
-                                  prefix_name(instruction->prefixes[PPS_REX]));
-                }
-                break;
-            case MERR_BADBND:
-            case MERR_BADREPNE:
-                nasm_nonfatal("%s prefix is not allowed",
-                              prefix_name(instruction->prefixes[PPS_REP]));
-                break;
-            case MERR_REGSETSIZE:
-                nasm_nonfatal("invalid register set size");
-                break;
-            case MERR_REGSET:
-                nasm_nonfatal("register set not valid for operand");
-                break;
-            case MERR_WRONGIMM:
-                nasm_nonfatal("operand/operator invalid for this instruction");
-                break;
-            case MERR_BADZU:
-                nasm_nonfatal("{zu} not applicable to this instruction");
-                break;
-            case MERR_MEMZU:
-                nasm_nonfatal("{zu} invalid for non-register destination");
-                break;
-            case MERR_BADNF:
-                nasm_nonfatal("{nf} not available for this instruction");
-                break;
-            case MERR_REQNF:
-                nasm_nonfatal("{nf} required for this instruction");
-                break;
-            }
-
+            no_match_error(m, instruction);
             instruction->times = 1; /* Avoid repeated error messages */
         }
     }
@@ -1387,8 +1292,10 @@ static int64_t insn_size(insn *instruction)
         insn_early_setup(instruction);
 
         m = find_match(&temp, instruction);
-        if (m < MOK_GOOD)
+        if (m < MOK_GOOD) {
+            no_match_error(m, instruction);
             return -1;              /* No match */
+        }
 
         isize = calcsize(instruction, temp);
         debug_set_type(instruction);
@@ -1417,12 +1324,6 @@ static void bad_hle_warn(const insn * ins, uint8_t hleok)
     if (!is_class(MEMORY, ins->oprs[0].type))
         ww = w_inval;           /* HLE requires operand 0 to be memory */
 
-    /*!
-     *!prefix-hle [on] invalid HLE prefix
-     *!=hle
-     *!  warns about invalid use of the HLE \c{XACQUIRE} or \c{XRELEASE}
-     *!  prefixes.
-     */
     switch (ww) {
     case w_none:
         break;
@@ -1508,7 +1409,7 @@ static int64_t calcsize(insn *ins, const struct itemplate * const temp)
     ins->itemp   = temp;        /* Instruction template */
     eat = EA_SCALAR;            /* Expect a scalar EA */
 
-    /* Default operand size */
+    /* Default operand size (prefixes are handled in the byte code) */
     ins->op_size = bits != 16 ? 32 : 16;
 
     nasm_zero(need_pfx);
@@ -1723,11 +1624,6 @@ static int64_t calcsize(insn *ins, const struct itemplate * const temp)
         case 0320:
         is_o16:
         {
-            /*! prefix-opsize [on] invalid operand size prefix
-             *!   warns that an operand prefix (\c{o16}, \c{o32}, \c{o64},
-             *!   \c{osp}) invalid for the specified instruction has been specified.
-             *!   The operand prefix will be ignored by the assembler.
-             */
             enum prefixes pfx = ins->prefixes[PPS_OSIZE];
             ins->op_size = 16;
             if (bits != 16 && pfx == P_OSP) {
@@ -1861,17 +1757,6 @@ static int64_t calcsize(insn *ins, const struct itemplate * const temp)
             break;
 
         case 0340:
-            /*!
-             *!forward [on] forward reference may have unpredictable results
-             *!  warns that a forward reference is used which may have
-             *!  unpredictable results, notably in a \c{RESB}-type
-             *!  pseudo-instruction. These would be \i\e{critical
-             *!  expressions} (see \k{crit}) but are permitted in a
-             *!  handful of cases for compatibility with older
-             *!  versions of NASM. This warning should be treated as a
-             *!  severe programming error as the code could break at
-             *!  any time for any number of reasons.
-             */
             /* The bytecode ends in 0, so opx points to operand 0 */
             if (!absolute_op(opx)) {
                 nasm_nonfatal("attempt to reserve non-constant"
@@ -1960,16 +1845,6 @@ static int64_t calcsize(insn *ins, const struct itemplate * const temp)
             if (ins->prefixes[PPS_REP] == P_BND) {
                 /* jmp short (opcode eb) cannot be used with bnd prefix. */
                 ins->prefixes[PPS_REP] = P_none;
-                /*!
-                 *!prefix-bnd [on] invalid \c{BND} prefix
-                 *!=bnd
-                 *!  warns about ineffective use of the \c{BND} prefix when the
-                 *!  \c{JMP} instruction is converted to the \c{SHORT} form.
-                 *!  This should be extremely rare since the short \c{JMP} only
-                 *!  is applicable to jumps inside the same module, but if
-                 *!  it is legitimate, it may be necessary to use
-                 *!  \c{bnd jmp dword}.
-                 */
                 if (!ins->dummy)
                     nasm_warn(WARN_PREFIX_BND,
                               "jmp short does not init bnd regs - bnd prefix dropped");
@@ -2196,21 +2071,8 @@ static int64_t calcsize(insn *ins, const struct itemplate * const temp)
     if (lockcheck && has_prefix(ins, PPS_LOCK, P_LOCK)) {
         if ((!itemp_has(temp,IF_LOCK)  || !is_class(MEMORY, ins->oprs[0].type)) &&
             (!itemp_has(temp,IF_LOCK1) || !is_class(MEMORY, ins->oprs[1].type))) {
-            /*!
-             *!prefix-lock-error [on] \c{LOCK} prefix on unlockable instruction
-             *!=lock
-             *!  warns about \c{LOCK} prefixes on unlockable instructions.
-             */
             nasm_warn(WARN_PREFIX_LOCK_ERROR, "instruction is not lockable");
         } else if (temp->opcode == I_XCHG) {
-            /*!
-             *!prefix-lock-xchg [on] superfluous \c{LOCK} prefix on \c{XCHG} instruction
-             *!  warns about a \c{LOCK} prefix added to an \c{XCHG} instruction.
-             *!  The \c{XCHG} instruction is \e{always} locking, and so this
-             *!  prefix is not necessary; however, NASM will generate it if
-             *!  explicitly provided by the user, so this warning indicates that
-             *!  suboptimal code is being generated.
-             */
             nasm_warn(WARN_PREFIX_LOCK_XCHG,
                       "superfluous LOCK prefix on XCHG instruction");
         }
@@ -2232,17 +2094,6 @@ static int64_t calcsize(insn *ins, const struct itemplate * const temp)
      */
     if (ins->prefixes[PPS_SEG] == P_PT || ins->prefixes[PPS_SEG] == P_PN) {
         if (!itemp_has(temp, IF_JCC_HINT)) {
-            /*!
-             *!prefix-hint-dropped [on] invalid branch hint prefix dropped
-             *!  warns that the \c{{PT}} (predict taken) or \c{{PN}}
-             *!  (predict not taken) branch prediction hint prefixes
-             *!  are specified on an instruction that does not take
-             *!  these prefixes. As these prefixes alias the segment
-             *!  override prefixes, this may be a very serious error,
-             *!  and therefore NASM will not generate these prefixes.
-             *!  To force these prefixes to be emitted, use \c{DS} or
-             *!  \c{CS}, instead, respectively.
-             */
             nasm_warn(WARN_PREFIX_HINT_DROPPED,
                       "invalid branch hint prefix dropped");
             ins->prefixes[PPS_SEG] = 0;
@@ -2428,13 +2279,6 @@ static int emit_prefixes(struct out_data *data, const insn *ins)
                 c = r;
                 break;
             default:
-                /*!
-                 *!prefix-invalid [on] invalid prefix for instruction
-                 *!  this instruction is only valid with certain combinations
-                 *!  of prefixes. The prefix will still be generated as
-                 *!  requested, but the result may be a completely different
-                 *!  instruction.
-                 */
                 if (do_warn)
                     nasm_warn(WARN_PREFIX_INVALID,
                               "invalid prefix %s for instruction, result may be unexpected",
@@ -2453,12 +2297,6 @@ static int emit_prefixes(struct out_data *data, const insn *ins)
             /* fall through */
         case R_ES:
         case R_SS:
-            /*!
-             *!prefix-seg [on] segment prefix ignored in 64-bit mode
-             *!  warns that an \c{es}, \c{cs}, \c{ss} or \c{ds} segment override
-             *!  prefix has no effect in 64-bit mode. The prefix will still be
-             *!  generated as requested.
-             */
             if (do_warn && bits == 64) {
                 nasm_warn(WARN_PREFIX_SEG,
                           "%s segment override will be ignored in 64-bit mode",
@@ -3213,7 +3051,7 @@ static enum match_result matches(const struct itemplate * const itemp,
 
     /* "Default" operand size (from mode and prefixes only) */
     op_size = ins->op_size;
-    if (itemp_has(itemp, IF_NWSIZE) && op_size == 32) {
+    if (bits == 64 && itemp_has(itemp, IF_NWSIZE) && op_size == 32) {
         /* If this is an nw instruction, default to 64 bits in 64-bit mode */
         op_size = bits;
     }
@@ -3253,18 +3091,23 @@ static enum match_result matches(const struct itemplate * const itemp,
 
         /* Handle implied SHORT or NEAR */
         if (unlikely(ttype & (NEAR|SHORT))) {
+            /* Treat BYTE as an alias for SHORT, ignoring size */
+            if (isize[i] == BITS8) {
+                itype[i] |= SHORT;
+                isize[i] = 0;
+            }
+            /* An explicit SHORT or BITS8 cancels NEAR; are synonyms */
+            if (itype[i] & SHORT) {
+                itype[i] &= ~NEAR;
+            }
+            /* NEAR is implicit unless otherwise specified */
+           if (!(itype[i] & (FAR|SHORT))) {
+                itype[i] |= ttype & NEAR;
+            }
             if ((ttype & (NEAR|SHORT)) == (NEAR|SHORT)) {
-                /* Only a short form exists; allow both NEAR and SHORT */
+                /* Only a short form exists; this is specially coded */
                 if (!(itype[i] & (FAR|ABS)))
                     itype[i] |= NEAR|SHORT;
-            } else if ((itype[i] & SHORT) || isize[i] == BITS8) {
-                /* An explicit SHORT or BITS8 cancel NEAR; are synonyms */
-                itype[i] &= ~NEAR;
-                if (!isize[i])
-                    isize[i] = BITS8;
-            } else if (!(itype[i] & (FAR|ABS|SHORT))) {
-                /* NEAR is implicit unless otherwise specified */
-                itype[i] |= ttype & NEAR;
             }
         }
 
@@ -3273,20 +3116,18 @@ static enum match_result matches(const struct itemplate * const itemp,
             /*
              * If this is an *explicitly* sized immediate,
              * allow it to match an extending pattern.
+             *
+             * NOTE: Open Watcom does not support 64-bit constants
+             * in switch statements; do not change this to a switch.
              */
-            switch (isize[i]) {
-            case BITS8:
+            if (isize[i] == BITS8) {
                 if (ttype & BYTEEXTMASK) {
                     isize[i]  = tsize[i];
                     itype[i] |= BYTEEXTMASK;
                 }
-                break;
-            case BITS32:
+            } else if (isize[i] == BITS32) {
                 if (ttype & DWORDEXTMASK)
                     isize[i]  = tsize[i];
-                break;
-            default:
-                break;
             }
 
             /*
@@ -3620,14 +3461,7 @@ static int process_ea(operand *input, int rfield, opflags_t rflags,
                         input->type |= IP_REL;
                 }
                 if ((input->type & IP_REL) == IP_REL) {
-                    /*!
-                     *!ea-absolute [on] absolute address cannot be RIP-relative
-                     *!  warns that an address that is inherently absolute cannot
-                     *!  be generated with RIP-relative encoding using \c{REL},
-                     *!  see \k{default-rel}.
-                     */
-                    if (input->segment == NO_SEG ||
-                        (input->opflags & OPFLAG_RELATIVE)) {
+                    if (!pass_first() && absolute_op(input)) {
                         nasm_warn(WARN_EA_ABSOLUTE,
                                   "absolute address can not be RIP-relative");
                         input->type &= ~IP_REL;
@@ -3644,12 +3478,6 @@ static int process_ea(operand *input, int rfield, opflags_t rflags,
             if ((eaflags & EAF_BYTEOFFS) ||
                 ((eaflags & EAF_WORDOFFS) &&
                  input->disp_size != (addrbits != 16 ? 32 : 16))) {
-                /*!
-                 *!ea-dispsize [on] displacement size ignored on absolute address
-                 *!  warns that NASM does not support generating displacements for
-                 *!  inherently absolute addresses that do not match the address size
-                 *!  of the instruction.
-                 */
                 nasm_warn(WARN_EA_DISPSIZE, "displacement size ignored on absolute address");
             }
 

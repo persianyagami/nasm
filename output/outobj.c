@@ -22,7 +22,7 @@
 #include "outform.h"
 #include "outlib.h"
 
-#ifdef OF_OBJ
+#if defined(OF_OBJ) || defined(OF_OBJ2)
 
 /*
  * outobj.c is divided into two sections.  The first section is low level
@@ -165,7 +165,7 @@ static ObjRecord *obj_clear(ObjRecord * orp)
     orp->child = NULL;
     orp->up = NULL;
     orp->back = NULL;
-    return (orp);
+    return orp;
 }
 
 /*
@@ -190,7 +190,7 @@ static ObjRecord *obj_emit(ObjRecord * orp)
         nasm_free(orp->child);
     }
 
-    return (obj_clear(orp));
+    return obj_clear(orp);
 }
 
 /*
@@ -199,7 +199,7 @@ static ObjRecord *obj_emit(ObjRecord * orp)
 static ObjRecord *obj_emit2(ObjRecord * orp)
 {
     obj_commit(orp);
-    return (obj_emit(orp));
+    return obj_emit(orp);
 }
 
 /*
@@ -211,7 +211,7 @@ static ObjRecord *obj_new(void)
 
     orp = obj_clear(nasm_malloc(sizeof(ObjRecord)));
     orp->ori = ori_null;
-    return (orp);
+    return orp;
 }
 
 /*
@@ -244,7 +244,7 @@ static ObjRecord *obj_bump(ObjRecord * orp)
         nxt->used = nxt->committed + used;
     }
 
-    return (nxt);
+    return nxt;
 }
 
 /*
@@ -261,7 +261,7 @@ static ObjRecord *obj_check(ObjRecord * orp, int size)
         orp->committed = orp->used;
     }
 
-    return (orp);
+    return orp;
 }
 
 /*
@@ -271,7 +271,7 @@ static ObjRecord *obj_check(ObjRecord * orp, int size)
 static ObjRecord *obj_commit(ObjRecord * orp)
 {
     orp->committed = orp->used;
-    return (orp);
+    return orp;
 }
 
 /*
@@ -282,7 +282,7 @@ static ObjRecord *obj_byte(ObjRecord * orp, uint8_t val)
     orp = obj_check(orp, 1);
     orp->buf[orp->used] = val;
     orp->used++;
-    return (orp);
+    return orp;
 }
 
 /*
@@ -294,7 +294,7 @@ static ObjRecord *obj_word(ObjRecord * orp, unsigned int val)
     orp->buf[orp->used] = val;
     orp->buf[orp->used + 1] = val >> 8;
     orp->used += 2;
-    return (orp);
+    return orp;
 }
 
 /*
@@ -306,7 +306,7 @@ static ObjRecord *obj_rword(ObjRecord * orp, unsigned int val)
     orp->buf[orp->used] = val >> 8;
     orp->buf[orp->used + 1] = val;
     orp->used += 2;
-    return (orp);
+    return orp;
 }
 
 /*
@@ -320,7 +320,7 @@ static ObjRecord *obj_dword(ObjRecord * orp, uint32_t val)
     orp->buf[orp->used + 2] = val >> 16;
     orp->buf[orp->used + 3] = val >> 24;
     orp->used += 4;
-    return (orp);
+    return orp;
 }
 
 /*
@@ -338,7 +338,7 @@ static ObjRecord *obj_force(ObjRecord * orp, int x)
     if (orp->x_size == (x ^ 48))
         orp = obj_bump(orp);
     orp->x_size = x;
-    return (orp);
+    return orp;
 }
 
 /*
@@ -357,7 +357,7 @@ static ObjRecord *obj_x(ObjRecord * orp, uint32_t val)
 	return nxt;
     }
     orp->x_size = 16;
-    return (obj_word(orp, val));
+    return obj_word(orp, val);
 }
 
 /*
@@ -366,8 +366,8 @@ static ObjRecord *obj_x(ObjRecord * orp, uint32_t val)
 static ObjRecord *obj_index(ObjRecord * orp, unsigned int val)
 {
     if (val < 128)
-        return (obj_byte(orp, val));
-    return (obj_word(orp, (val >> 8) | (val << 8) | 0x80));
+        return obj_byte(orp, val);
+    return obj_word(orp, (val >> 8) | (val << 8) | 0x80);
 }
 
 /*
@@ -376,15 +376,15 @@ static ObjRecord *obj_index(ObjRecord * orp, unsigned int val)
 static ObjRecord *obj_value(ObjRecord * orp, uint32_t val)
 {
     if (val <= 128)
-        return (obj_byte(orp, val));
+        return obj_byte(orp, val);
     if (val <= 0xFFFF) {
         orp = obj_byte(orp, 129);
-        return (obj_word(orp, val));
+        return obj_word(orp, val);
     }
     if (val <= 0xFFFFFF)
-        return (obj_dword(orp, (val << 8) + 132));
+        return obj_dword(orp, (val << 8) + 132);
     orp = obj_byte(orp, 136);
-    return (obj_dword(orp, val));
+    return obj_dword(orp, val);
 }
 
 /*
@@ -411,7 +411,7 @@ static ObjRecord *obj_name(ObjRecord * orp, const char *name)
             name++;
     } else
         memcpy(ptr, name, len);
-    return (orp);
+    return orp;
 }
 
 /*
@@ -602,6 +602,11 @@ static struct ExpDef {
 #define EXPDEF_FLAG_NODATA   0x20
 #define EXPDEF_MASK_PARMCNT  0x1F
 
+struct SegmentToClass {
+    const char *segment;        /* segment  */
+    const char *segclass;       /* class    */
+};
+
 static int32_t obj_entry_seg, obj_entry_ofs;
 
 const struct ofmt of_obj;
@@ -613,9 +618,41 @@ static struct Segment *current_seg;
 /* Name for segment to use if no segment directive is defined */
 static char DEFAULT_SEG[] = "__NASMDEFSEG";
 
+/* Conversion table from known segments to default classes */
+static const struct SegmentToClass conv_table[] = {
+    /* known segments,  default class */
+    { "CODE",           "CODE"  },
+    { "TEXT",           "CODE"  },
+    { "CONST",          "CONST" },
+    { "DATA",           "DATA"  },
+    { "BSS",            "BSS"   },
+    { "STACK",          "STACK" },
+    { "CODE32",         "CODE"  },
+    { "TEXT32",         "CODE"  },
+    { "CONST32",        "CONST" },
+    { "DATA32",         "DATA"  },
+    { "BSS32",          "BSS"   },
+    { "STACK32",        "STACK" },
+    { NULL,             NULL    },
+};
+
 static int32_t obj_segment(char *, int *);
 static void obj_write_file(void);
 static enum directive_result obj_directive(enum directive, char *);
+
+static const char *get_default_class(const char *segment)
+{
+    const struct SegmentToClass *conv;
+
+    if (segment && segment[0]) {
+        for (conv = conv_table; conv->segment; conv++) {
+            if (!strcmp(segment, conv->segment))
+                return conv->segclass;
+        }
+    }
+
+    return NULL;
+}
 
 static void obj_init(void)
 {
@@ -643,6 +680,21 @@ static void obj_init(void)
     obj_use32 = false;
     passtwo = 0;
     current_seg = NULL;
+
+    /*
+     * Convert known Unix sections to OMF segments via macros.
+     */
+    if (ofmt == &of_obj2) {
+        char section_text[]   = ".text=TEXT32";
+        char section_rodata[] = ".rodata=CONST32";
+        char section_data[]   = ".data=DATA32";
+        char section_bss[]    = ".bss=BSS32";
+
+        pp_pre_define(section_text);
+        pp_pre_define(section_rodata);
+        pp_pre_define(section_data);
+        pp_pre_define(section_bss);
+    }
 }
 
 static void obj_cleanup(void)
@@ -1319,12 +1371,6 @@ static uint32_t check_segment_alignment(const uint64_t origalign)
     while (!(align & alignments))
         align <<= 1;
 
-    /*!
-     *!section-alignment-rounded [on] section alignment rounded up
-     *!  warn if a section alignment is specified which is
-     *!  not supported by the underlying object format, but
-     *!  can be rounded up to a supported value.
-     */
     nasm_warn(WARN_SECTION_ALIGNMENT_ROUNDED,
               "alignment of %"PRIu64" not supported, using %"PRIu32,
               origalign, align);
@@ -1400,9 +1446,16 @@ static int32_t obj_segment(char *name, int *bits)
         any_segs = true;
         seg->name = nasm_strdup(name);
         seg->currentpos = 0;
-        seg->align = seg->origalign = 1; /* default */
-        seg->use32 = false;              /* default */
-        seg->combine = CMB_PUBLIC;       /* default */
+        if (ofmt == &of_obj) {
+            seg->align = 1;         /* default for obj */
+            seg->origalign = 1;     /* default for obj */
+            seg->use32 = false;     /* default for obj */
+        } else {
+            seg->align = 16;        /* default for obj2 */
+            seg->origalign = 16;    /* default for obj2 */
+            seg->use32 = true;      /* default for obj2 */
+        }
+        seg->combine = CMB_PUBLIC;      /* default */
         seg->segclass = seg->overlay = NULL;
         seg->pubhead = NULL;
         seg->pubtail = &seg->pubhead;
@@ -1495,6 +1548,31 @@ static int32_t obj_segment(char *name, int *bits)
         if (!seg->use32 && seg->grp && !strcmp(seg->grp->name, "FLAT"))
            nasm_panic("wrong combination of USE16(16-bit segment) and FLAT");
 
+        if (ofmt == &of_obj2) {
+            if (seg->use32 && !seg->grp) {
+                struct Group *grp;
+                for (grp = grphead; grp; grp = grp->next)
+                    if (!strcmp(grp->name, "FLAT"))
+                        break;
+                if (!grp) {
+                    obj_directive(D_GROUP, "FLAT");
+                    for (grp = grphead; grp; grp = grp->next)
+                        if (!strcmp(grp->name, "FLAT"))
+                            break;
+                    if (!grp)
+                        nasm_panic("failure to define FLAT?!");
+                }
+                seg->grp = grp;
+            }
+
+            if (!seg->segclass) {
+                const char *segclass = get_default_class(seg->name);
+
+                if (segclass)
+                    seg->segclass = nasm_strdup(segclass);
+            }
+        }
+
         /* We need to know whenever we have at least one 32-bit segment */
         obj_use32 |= seg->use32;
 
@@ -1574,6 +1652,8 @@ obj_directive(enum directive directive, char *value)
             struct Segment *seg;
             struct External **extp;
             int obj_idx;
+            const char *segname;
+            int i;
 
             q = value;
             while (*q == '.')
@@ -1602,22 +1682,23 @@ obj_directive(enum directive directive, char *value)
             for (grp = grphead; grp; grp = grp->next) {
                 obj_idx++;
                 if (!strcmp(grp->name, v)) {
-                    nasm_nonfatal("group `%s' defined twice", v);
-                    return DIRR_ERROR;
+                    break;
                 }
             }
 
-            *grptail = grp = nasm_malloc(sizeof(*grp));
-            grp->next = NULL;
-            grptail = &grp->next;
-            grp->index = seg_alloc();
-            grp->obj_index = obj_idx;
-            grp->nindices = grp->nentries = 0;
-            grp->name = NULL;
+            if (!grp) {
+                *grptail = grp = nasm_malloc(sizeof(*grp));
+                grp->next = NULL;
+                grptail = &grp->next;
+                grp->index = seg_alloc();
+                grp->obj_index = obj_idx;
+                grp->nindices = grp->nentries = 0;
+                grp->name = NULL;
 
-            obj_grp_needs_update = grp;
-            backend_label(v, grp->index + 1, 0L);
-            obj_grp_needs_update = NULL;
+                obj_grp_needs_update = grp;
+                backend_label(v, grp->index + 1, 0L);
+                obj_grp_needs_update = NULL;
+            }
 
             while (*q) {
                 p = q;
@@ -1631,6 +1712,30 @@ obj_directive(enum directive directive, char *value)
                 /*
                  * Now p contains a segment name. Find it.
                  */
+                for (i = 0; i < grp->nentries; i++) {
+                    if (i < grp->nindices) {
+                        segname = NULL;     /* make compiler happy */
+                        for (seg = seghead; seg; seg = seg->next) {
+                            if (grp->segs[i].index == seg->obj_index) {
+                                segname = seg->name;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                        segname = grp->segs[i].name;
+                    /*
+                     * See if this segment is defined in this group.
+                     */
+                    if (!strcmp(segname, p))
+                        break;
+                }
+                if (i < grp->nentries) {
+                    /*
+                     * We have already this segment. Skip.
+                     */
+                    continue;
+                }
                 for (seg = seghead; seg; seg = seg->next)
                     if (!strcmp(seg->name, p))
                         break;
@@ -2691,4 +2796,26 @@ const struct ofmt of_obj = {
     obj_cleanup,
     obj_pragma_list
 };
-#endif                          /* OF_OBJ */
+
+const struct ofmt of_obj2 = {
+    "Intel/Microsoft OMF (i386) (OS/2)",
+    "obj2",
+    ".obj",
+    0,
+    32,
+    borland_debug_arr,
+    &borland_debug_form,
+    obj_stdmac,
+    obj_init,
+    null_reset,
+    obj_out,
+    obj_deflabel,
+    obj_segment,
+    NULL,
+    obj_sectalign,
+    obj_segbase,
+    obj_directive,
+    obj_cleanup,
+    obj_pragma_list
+};
+#endif                          /* OF_OBJ || OF_OBJ2 */

@@ -13,17 +13,21 @@ unsigned int debug_nasm;        /* Debugging messages? */
 unsigned int opt_verbose_info;  /* Informational messages? */
 
 /* Common function body */
-#define nasm_do_error(_sev,_flags)				\
+#define nasm_do_error(_sev,_flags)                              \
     do {                                                        \
+        const errflags nde_severity = (_sev);                   \
+        const errflags nde_flags = nde_severity | (_flags);     \
         va_list ap;                                             \
         va_start(ap, fmt);                                      \
-        if ((_sev) >= ERR_CRITICAL)                             \
-            nasm_verror_critical((_sev)|(_flags), fmt, ap);     \
-        else							\
-            nasm_verror((_sev)|(_flags), fmt, ap);              \
+        if (nde_severity >= ERR_CRITICAL) {                     \
+            nasm_verror_critical(nde_flags, fmt, ap);           \
+            unreachable();                                      \
+        } else {						\
+            nasm_verror(nde_flags, fmt, ap);                    \
+            if (nde_severity >= ERR_FATAL)                      \
+                unreachable();                                  \
+        }                                                       \
         va_end(ap);                                             \
-        if ((_sev) >= ERR_FATAL)                                \
-            abort();                                            \
     } while (0)
 
 /*
@@ -81,6 +85,14 @@ void nasm_debug_(unsigned int level, const char *fmt, ...)
         nasm_do_error(ERR_DEBUG, LEVEL(level));
 }
 
+/*
+ * Convenience function for nasm_nonfatal(ERR_HOLD, ...)
+ */
+void nasm_holderr(const char *fmt, ...)
+{
+    nasm_do_error(ERR_NONFATAL, ERR_NONFATAL|ERR_HOLD);
+}
+
 fatal_func nasm_panic_from_macro(const char *func, const char *file, int line)
 {
     if (!func)
@@ -128,12 +140,6 @@ void pop_warnings(void)
 
 	memcpy(warning_state, ws->state, sizeof warning_state);
 	if (!ws->next) {
-		/*!
-		 *!warn-stack-empty [on] warning stack empty
-		 *!  a \c{[WARNING POP]} directive was executed when
-		 *!  the warning stack is empty. This is treated
-		 *!  as a \c{[WARNING *all]} directive.
-		 */
 		nasm_warn(WARN_WARN_STACK_EMPTY, "warning stack empty");
 	} else {
 		warning_stack = ws->next;
@@ -168,15 +174,9 @@ void reset_warnings(void)
  * This is called when processing a -w or -W option, or a warning directive.
  * Returns ok if the action was successful.
  *
- * Special pseudo-warnings:
- *
- *!other [on] any warning not specifically mentioned above
- *!  specifies any warning not included in any specific warning class.
- *
- *!all [all] all possible warnings
- *!  is an group alias for \e{all} warning classes.  Thus, \c{-w+all}
- *!  enables all available warnings, and \c{-w-all} disables warnings
- *!  entirely (since NASM 2.13).
+ * Special pseudo-warnings (see warnings.dat):
+ * all   - all possible warnings
+ * other - any warning not specifically assigned a class
  */
 bool set_warning_status(const char *value)
 {
@@ -277,11 +277,6 @@ bool set_warning_status(const char *value)
         }
 
         if (!ok && value) {
-            /*!
-             *!unknown-warning [off] unknown warning in \c{-W}/\c{-w} or warning directive
-             *!  warns about a \c{-w} or \c{-W} option or a \c{[WARNING]} directive
-             *!  that contains an unknown warning name or is otherwise not possible to process.
-             */
             nasm_warn(WARN_UNKNOWN_WARNING, "unknown warning name: %s", value);
 	}
 
